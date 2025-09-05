@@ -1,4 +1,4 @@
-# Trepa MVP Backend
+# Prognos MVP Backend
 
 A simple Node.js + TypeScript backend for prediction pools using Stacks wallet addresses for identity.
 
@@ -28,11 +28,13 @@ backend/
 ## Setup & Installation
 
 1. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 2. **Set up the database:**
+
    ```bash
    npm run db:push
    npm run db:generate
@@ -48,10 +50,12 @@ The server will run on http://localhost:3000
 ## Database Models
 
 ### User
+
 - `id` - Unique identifier
 - `walletAddress` - Stacks wallet address (unique)
 
 ### Pool
+
 - `id` - Unique identifier
 - `title` - Pool title
 - `description` - Pool description
@@ -61,6 +65,7 @@ The server will run on http://localhost:3000
 - `totalStake` - Total amount staked
 
 ### Prediction
+
 - `id` - Unique identifier
 - `poolId` - Reference to Pool
 - `userWalletAddress` - Reference to User
@@ -71,15 +76,19 @@ The server will run on http://localhost:3000
 ## API Endpoints
 
 ### GET /api/pools
+
 Returns all pools with predictions and counts.
 
 ### GET /api/pools/:id
+
 Returns specific pool details.
 
 ### POST /api/pools/:id/vote
+
 Vote on a pool without staking money.
 
 **Body:**
+
 ```json
 {
   "walletAddress": "SP123...ABC",
@@ -88,9 +97,11 @@ Vote on a pool without staking money.
 ```
 
 ### POST /api/pools/:id/stake
+
 Stake money on a prediction.
 
 **Body:**
+
 ```json
 {
   "walletAddress": "SP123...ABC",
@@ -100,9 +111,11 @@ Stake money on a prediction.
 ```
 
 ### POST /api/pools/:id/claim
+
 Claim rewards (mock implementation).
 
 **Body:**
+
 ```json
 {
   "walletAddress": "SP123...ABC"
@@ -114,11 +127,13 @@ Claim rewards (mock implementation).
 ### Create a Pool
 
 **Interactive mode:**
+
 ```bash
 npm run create-pool
 ```
 
 **CLI mode:**
+
 ```bash
 npm run create-pool "Pool Title" "Pool Description" "sports" "2024-12-31" "https://image.url"
 ```
@@ -136,6 +151,7 @@ npm run create-pool "Pool Title" "Pool Description" "sports" "2024-12-31" "https
 ## Environment Variables
 
 The `.env` file contains:
+
 ```
 DATABASE_URL="file:./dev.db"
 ```

@@ -1,4 +1,4 @@
-# Trepa MVP — LLM Specs (Backend & Frontend)
+# Prognos MVP — LLM Specs (Backend & Frontend)
 
 ## Backend (Node.js + Express)
 
