@@ -1,0 +1,52 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  walletAddress String       @unique
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  predictions   Prediction[]
+
+  @@map("users")
+}
+
+model Pool {
+  id          String       @id @default(cuid())
+  title       String
+  description String
+  tag         String
+  deadline    DateTime
+  image       String?
+  totalStake  Float        @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  predictions Prediction[]
+
+  @@map("pools")
+}
+
+model Prediction {
+  id                String  @id @default(cuid())
+  poolId            String
+  userWalletAddress String
+  predictionValue   String  // "yes"/"no" or numeric value as string
+  stakeAmount       Float   @default(0)
+  claimed           Boolean @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  pool Pool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userWalletAddress], references: [walletAddress], onDelete: Cascade)
+
+  @@map("predictions")
+}
