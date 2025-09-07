@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import db from "../db";
+import { RewardService } from "../services/rewardService";
+import { TransactionService } from "../services/transactionService";
 
 const router = Router();
 
@@ -12,10 +14,16 @@ interface StakeBody {
   walletAddress: string;
   predictionValue: string;
   stakeAmount: number;
+  transactionId?: string; // STX transaction ID for verification
 }
 
 interface ClaimBody {
   walletAddress: string;
+}
+
+interface ResolvePoolBody {
+  outcomeValue: number;
+  useQuadraticScoring?: boolean;
 }
 
 // GET /api/pools - View all pools
@@ -153,11 +161,11 @@ router.post("/:id/vote", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/pools/:id/stake - User stakes on pool
+// POST /api/pools/:id/stake - User stakes on pool with transaction verification
 router.post("/:id/stake", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { walletAddress, predictionValue, stakeAmount }: StakeBody = req.body;
+    const { walletAddress, predictionValue, stakeAmount, transactionId }: StakeBody = req.body;
 
     if (!walletAddress || !predictionValue || !stakeAmount) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -165,6 +173,16 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
 
     if (stakeAmount <= 0) {
       return res.status(400).json({ error: "Stake amount must be positive" });
+    }
+
+    // Transaction verification is now required for stakes > 0
+    if (stakeAmount > 0 && !transactionId) {
+      return res.status(400).json({ error: "Transaction ID required for stakes" });
+    }
+
+    // Simple transaction ID validation
+    if (transactionId && (typeof transactionId !== 'string' || transactionId.trim().length === 0)) {
+      return res.status(400).json({ error: "Invalid transaction ID format" });
     }
 
     // Check if pool exists
@@ -176,6 +194,44 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
     // Check if deadline has passed
     if (new Date() > pool.deadline) {
       return res.status(400).json({ error: "Pool deadline has passed" });
+    }
+
+    // Check if transaction has already been used
+    if (transactionId) {
+      const existingTransaction = await db.prediction.findFirst({
+        where: { transactionId },
+      });
+
+      if (existingTransaction) {
+        return res.status(400).json({ error: "Transaction has already been used for another stake" });
+      }
+    }
+
+    // Verify transaction on-chain
+    let transactionVerified = false;
+    if (transactionId && stakeAmount > 0) {
+      try {
+        const verification = await TransactionService.verifyStakeTransaction(
+          transactionId,
+          walletAddress,
+          stakeAmount,
+          30 // 30 minutes max age
+        );
+
+        if (!verification.isValid) {
+          return res.status(400).json({ 
+            error: `Transaction verification failed: ${verification.error}`,
+            transactionData: verification.transactionData
+          });
+        }
+
+        transactionVerified = true;
+      } catch (error) {
+        return res.status(500).json({ 
+          error: "Transaction verification failed", 
+          details: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
     }
 
     // Create user if doesn't exist
@@ -201,6 +257,8 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
         data: {
           predictionValue,
           stakeAmount: existingPrediction.stakeAmount + stakeAmount,
+          transactionId: transactionId || existingPrediction.transactionId,
+          transactionVerified: transactionVerified || existingPrediction.transactionVerified,
         },
       });
     } else {
@@ -211,6 +269,8 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
           userWalletAddress: walletAddress,
           predictionValue,
           stakeAmount,
+          transactionId,
+          transactionVerified,
         },
       });
     }
@@ -221,14 +281,73 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
       data: { totalStake: { increment: stakeAmount } },
     });
 
-    return res.json(prediction);
+    return res.json({
+      ...prediction,
+      message: transactionVerified ? "Stake verified and recorded successfully" : "Stake recorded (verification pending)"
+    });
   } catch (error) {
     console.error("Error creating stake:", error);
     return res.status(500).json({ error: "Failed to create stake" });
   }
 });
 
-// POST /api/pools/:id/claim - Claim rewards (mock)
+// POST /api/pools/:id/resolve - Admin resolves pool with outcome value
+router.post("/:id/resolve", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { outcomeValue, useQuadraticScoring = false }: ResolvePoolBody = req.body;
+
+    if (outcomeValue === undefined || outcomeValue === null) {
+      return res.status(400).json({ error: "Outcome value is required" });
+    }
+
+    if (outcomeValue < 0 || outcomeValue > 100) {
+      return res.status(400).json({ error: "Outcome value must be between 0 and 100" });
+    }
+
+    // Check if pool exists
+    const pool = await db.pool.findUnique({ where: { id } });
+    if (!pool) {
+      return res.status(404).json({ error: "Pool not found" });
+    }
+
+    if (pool.isResolved) {
+      return res.status(400).json({ error: "Pool is already resolved" });
+    }
+
+    // Check if deadline has passed (optional check for admin)
+    if (new Date() < pool.deadline) {
+      console.warn(`Warning: Resolving pool ${id} before deadline`);
+    }
+
+    await RewardService.resolvePool(id, outcomeValue, useQuadraticScoring);
+
+    const summary = await RewardService.getRewardSummary(id);
+
+    return res.json({
+      message: "Pool resolved successfully",
+      ...summary
+    });
+  } catch (error) {
+    console.error("Error resolving pool:", error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Failed to resolve pool" });
+  }
+});
+
+// GET /api/pools/:id/rewards - Get reward summary for a pool
+router.get("/:id/rewards", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const summary = await RewardService.getRewardSummary(id);
+    return res.json(summary);
+  } catch (error) {
+    console.error("Error fetching reward summary:", error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Failed to fetch reward summary" });
+  }
+});
+
+// POST /api/pools/:id/claim - Claim rewards (updated)
 router.post("/:id/claim", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
@@ -238,47 +357,27 @@ router.post("/:id/claim", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Missing wallet address" });
     }
 
-    // Find user's prediction
-    const prediction = await db.prediction.findFirst({
-      where: {
-        poolId: id,
-        userWalletAddress: walletAddress,
-      },
-      include: { pool: true },
-    });
+    // Check claimability using reward service
+    const claimCheck = await RewardService.checkClaimability(id, walletAddress);
 
-    if (!prediction) {
-      return res
-        .status(404)
-        .json({ error: "No prediction found for this user and pool" });
+    if (!claimCheck.canClaim) {
+      return res.status(400).json({ error: claimCheck.reason });
     }
-
-    if (prediction.claimed) {
-      return res.status(400).json({ error: "Rewards already claimed" });
-    }
-
-    if (prediction.stakeAmount === 0) {
-      return res.status(400).json({ error: "No stake to claim" });
-    }
-
-    // Mock reward calculation
-    // In a real app, this would check the actual outcome and calculate rewards
-    const mockReward = prediction.stakeAmount * 1.5; // 50% profit for demo
 
     // Mark as claimed
     const updatedPrediction = await db.prediction.update({
-      where: { id: prediction.id },
+      where: { id: claimCheck.prediction!.id },
       data: { claimed: true },
     });
 
     return res.json({
       ...updatedPrediction,
-      mockReward,
-      message: "Rewards claimed successfully (mock)",
+      claimedAmount: claimCheck.claimableReward,
+      message: "Rewards claimed successfully",
     });
   } catch (error) {
     console.error("Error claiming reward:", error);
-    return res.status(500).json({ error: "Failed to claim reward" });
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Failed to claim reward" });
   }
 });
 

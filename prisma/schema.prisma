@@ -21,16 +21,18 @@ model User {
 }
 
 model Pool {
-  id          String       @id @default(cuid())
-  title       String
-  description String
-  tag         String
-  deadline    DateTime
-  image       String?
-  totalStake  Float        @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  predictions Prediction[]
+  id           String       @id @default(cuid())
+  title        String
+  description  String
+  tag          String
+  deadline     DateTime
+  image        String?
+  totalStake   Float        @default(0)
+  outcomeValue Float?       // Actual outcome value (e.g., 53%)
+  isResolved   Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  predictions  Prediction[]
 
   @@map("pools")
 }
@@ -42,6 +44,9 @@ model Prediction {
   predictionValue   String  // "yes"/"no" or numeric value as string
   stakeAmount       Float   @default(0)
   claimed           Boolean @default(false)
+  claimableReward   Float?  // Calculated reward amount
+  transactionId     String? // STX transaction ID for verification
+  transactionVerified Boolean @default(false) // Whether transaction is verified on-chain
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
