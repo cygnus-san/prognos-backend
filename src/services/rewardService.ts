@@ -87,35 +87,47 @@ export class RewardService {
 
     // Calculate scores and weighted scores
     let totalWeighted = 0;
-    const results: PredictionResult[] = [];
+    const stakedResults: PredictionResult[] = [];
+    const unstakedResults: PredictionResult[] = [];
 
     for (const prediction of pool.predictions) {
-      if (prediction.stakeAmount <= 0) {
-        // Skip predictions without stake
-        continue;
-      }
-
       const numericPrediction = this.parseNumericPrediction(prediction.predictionValue);
       const score = useQuadraticScoring 
         ? this.calculateQuadraticScore(numericPrediction, outcomeValue)
         : this.calculateScore(numericPrediction, outcomeValue);
       
-      const weighted = score * prediction.stakeAmount;
-
-      totalWeighted += weighted;
-      results.push({ prediction, score, weighted });
+      if (prediction.stakeAmount > 0) {
+        // Staked prediction - use weighted scoring
+        const weighted = score * prediction.stakeAmount;
+        totalWeighted += weighted;
+        stakedResults.push({ prediction, score, weighted });
+      } else {
+        // Non-staked prediction - base reward based on accuracy
+        const baseReward = score > 0.5 ? 5 : 1; // 5 STX for good predictions, 1 STX participation
+        unstakedResults.push({ prediction, score, weighted: baseReward });
+      }
     }
 
+    const results = [...stakedResults, ...unstakedResults];
+
     // Calculate and store rewards
-    if (totalWeighted > 0) {
-      for (const result of results) {
+    for (const result of stakedResults) {
+      if (totalWeighted > 0) {
+        // Staked predictions share the pool stake proportionally
         const reward = (result.weighted / totalWeighted) * pool.totalStake;
-        
         await db.prediction.update({
           where: { id: result.prediction.id },
           data: { claimableReward: reward }
         });
       }
+    }
+
+    // Give fixed rewards to unstaked predictions based on accuracy
+    for (const result of unstakedResults) {
+      await db.prediction.update({
+        where: { id: result.prediction.id },
+        data: { claimableReward: result.weighted } // baseReward (1 or 5 STX)
+      });
     }
 
     // Mark pool as resolved
@@ -236,12 +248,8 @@ export class RewardService {
       };
     }
 
-    if (prediction.stakeAmount <= 0) {
-      return {
-        canClaim: false,
-        reason: 'No stake amount to claim'
-      };
-    }
+    // Allow claims for both staked and unstaked predictions
+    // Unstaked predictions can still earn accuracy-based rewards
 
     if (!prediction.claimableReward || prediction.claimableReward <= 0) {
       return {

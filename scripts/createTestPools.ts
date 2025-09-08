@@ -86,13 +86,13 @@ const testPools = [
 
 async function createTestPools() {
   try {
-    console.log("🚀 Creating test pools...\n");
+    console.log("🚀 Creating test pools...");
 
     for (let i = 0; i < testPools.length; i++) {
       const poolData = testPools[i];
 
       console.log(
-        `Creating pool ${i + 1}/${testPools.length}: ${poolData.title.substring(
+        `Creael ${i + 1}/${testPools.length}: ${poolData.title.substring(
           0,
           50
         )}...`
@@ -104,7 +104,42 @@ async function createTestPools() {
         },
       });
 
-      console.log(`✅ Created pool with ID: ${pool.id}`);
+      // Create sample predictions with stakes for each pool
+      const samplePredictions = [
+        {
+          userWalletAddress: "SP2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKNRV9EJ7", // Mock wallet 1
+          predictionValue: Math.random() > 0.5 ? "yes" : "no",
+          stakeAmount: 5 + Math.random() * 15, // Random stake between 5-20 STX
+        },
+        {
+          userWalletAddress: "SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE", // Mock wallet 2
+          predictionValue: Math.random() > 0.5 ? "yes" : "no",
+          stakeAmount: 3 + Math.random() * 12, // Random stake between 3-15 STX
+        },
+      ];
+
+      let totalPoolStake = 0;
+      for (const predData of samplePredictions) {
+        await prisma.prediction.create({
+          data: {
+            poolId: pool.id,
+            ...predData,
+          },
+        });
+        totalPoolStake += predData.stakeAmount;
+      }
+
+      // Update pool with total stake
+      await prisma.pool.update({
+        where: { id: pool.id },
+        data: { totalStake: totalPoolStake },
+      });
+
+      console.log(
+        `✅ Created pool with ID: ${pool.id} and ${
+          samplePredictions.length
+        } predictions (Total stake: ${totalPoolStake.toFixed(2)} STX)`
+      );
     }
 
     console.log(`\n🎉 Successfully created ${testPools.length} test pools!`);
