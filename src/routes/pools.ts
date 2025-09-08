@@ -21,10 +21,6 @@ interface ClaimBody {
   walletAddress: string;
 }
 
-interface ResolvePoolBody {
-  outcomeValue: number;
-  useQuadraticScoring?: boolean;
-}
 
 // GET /api/pools - View all pools
 router.get("/", async (req: Request, res: Response) => {
@@ -291,48 +287,7 @@ router.post("/:id/stake", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/pools/:id/resolve - Admin resolves pool with outcome value
-router.post("/:id/resolve", async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { outcomeValue, useQuadraticScoring = false }: ResolvePoolBody = req.body;
-
-    if (outcomeValue === undefined || outcomeValue === null) {
-      return res.status(400).json({ error: "Outcome value is required" });
-    }
-
-    if (outcomeValue < 0 || outcomeValue > 100) {
-      return res.status(400).json({ error: "Outcome value must be between 0 and 100" });
-    }
-
-    // Check if pool exists
-    const pool = await db.pool.findUnique({ where: { id } });
-    if (!pool) {
-      return res.status(404).json({ error: "Pool not found" });
-    }
-
-    if (pool.isResolved) {
-      return res.status(400).json({ error: "Pool is already resolved" });
-    }
-
-    // Check if deadline has passed (optional check for admin)
-    if (new Date() < pool.deadline) {
-      console.warn(`Warning: Resolving pool ${id} before deadline`);
-    }
-
-    await RewardService.resolvePool(id, outcomeValue, useQuadraticScoring);
-
-    const summary = await RewardService.getRewardSummary(id);
-
-    return res.json({
-      message: "Pool resolved successfully",
-      ...summary
-    });
-  } catch (error) {
-    console.error("Error resolving pool:", error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Failed to resolve pool" });
-  }
-});
+// Manual resolve endpoint removed - pools are now resolved automatically when deadline passes
 
 // GET /api/pools/:id/rewards - Get reward summary for a pool
 router.get("/:id/rewards", async (req: Request, res: Response) => {
